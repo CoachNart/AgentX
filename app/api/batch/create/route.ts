@@ -30,7 +30,7 @@ export async function POST(req: Request) {
       select: { xPostId: true },
     });
 
-    const ids = new Set(existing.map((x) => x.xPostId));
+    const ids = new Set(existing.map((x: { xPostId: string }) => x.xPostId));
     const fresh = parsed.valid.filter((x) => !ids.has(x.postId));
 
     const batch = await db.batch.create({
