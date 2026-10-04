@@ -1,0 +1,2 @@
+export type JobStatus="processing"|"ready"|"approved"|"publishing"|"published"|"failed"|"skipped"|"rate_limited";
+export type QueueItem={id:string;author:string;username:string;preview:string;reply:string;status:JobStatus;confidence:number;timestamp:string};
