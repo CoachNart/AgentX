@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { parseXUrls } from "../lib/url-parser";
 
 type Tab = "Dashboard" | "New Batch" | "Queue" | "History" | "Settings";
@@ -14,7 +14,7 @@ type Account = { username:string;name?:string|null;avatarUrl?:string|null };
 const tabs:Tab[]=["Dashboard","New Batch","Queue","History","Settings"];
 const icons:Record<Tab,string>={Dashboard:"⌂","New Batch":"+","Queue":"≡","History":"◷","Settings":"⚙"};
 
-function Button(p:{children:React.ReactNode;onClick?:()=>void;disabled?:boolean;secondary?:boolean;danger?:boolean}) {
+function Button(p:{children:ReactNode;onClick?:()=>void;disabled?:boolean;secondary?:boolean;danger?:boolean}) {
   return <button onClick={p.onClick} disabled={p.disabled} className={p.danger?"btn btn-danger":p.secondary?"btn btn-secondary":"btn btn-primary"}>{p.children}</button>;
 }
 
@@ -145,6 +145,6 @@ function Settings(){
   const[data,setData]=useState<any>(null),[saving,setSaving]=useState(false);
   useEffect(()=>{fetch("/api/settings").then(r=>r.json()).then(setData)},[]);
   if(!data)return <section className="page-section"><div className="premium-card dash-empty">Loading settings…</div></section>;
-  const voice=data.voice||{},settings=data.settings||{},setVoice=(k:string,v:any)=>setData({...data,voice:{...voice,[k]:v}),setSettings=(k:string,v:any)=>setData({...data,settings:{...settings,[k]:v}}),save=async()=>{setSaving(true);await fetch("/api/settings",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({voice,settings})});setSaving(false)};
+  const voice=data.voice||{},settings=data.settings||{},setVoice=(k:string,v:any)=>setData({...data,voice:{...voice,[k]:v}}),setSettings=(k:string,v:any)=>setData({...data,settings:{...settings,[k]:v}}),save=async()=>{setSaving(true);await fetch("/api/settings",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({voice,settings})});setSaving(false)};
   return <section className="page-section"><PageIntro eyebrow="Control center" title="Settings" text="Tune your voice and publishing guardrails without changing the underlying workflow."/><div className="settings-grid"><section className="premium-card settings-card"><div className="section-head"><div><span className="eyebrow">01 · Voice</span><h2>Voice profile</h2></div></div><p className="card-copy">Configure your own style. AgentX does not imitate another person.</p>{[["tone","Tone"],["personality","Personality"],["preferredLength","Preferred length"],["emojiUsage","Emoji usage"],["slang","Slang"],["avoidWords","Words to avoid"],["avoidPhrases","Phrases to avoid"],["topics","Industries / topics"]].map(x=><label key={x[0]}><small>{x[1]}</small><input className="input" value={voice[x[0]]||""} onChange={e=>setVoice(x[0],e.target.value)}/></label>)}<label><small>Professional ↔ casual ({voice.professional??50})</small><input className="range" type="range" min="0" max="100" value={voice.professional??50} onChange={e=>setVoice("professional",Number(e.target.value))}/></label></section><section className="premium-card settings-card"><div className="section-head"><div><span className="eyebrow">02 · Guardrails</span><h2>Publishing & quality</h2></div></div><p className="card-copy">Review mode is the safe default. Auto-publish remains opt-in and permission-dependent.</p><label><small>Minimum quality · {settings.qualityThreshold??80}</small><input className="range" type="range" min="50" max="100" value={settings.qualityThreshold??80} onChange={e=>setSettings("qualityThreshold",Number(e.target.value))}/></label><label className="toggle"><span><b>Auto-publish</b><small>Only when explicitly enabled</small></span><input type="checkbox" checked={!!settings.autoPublish} onChange={e=>{setSettings("autoPublish",e.target.checked);setSettings("publishingMode",e.target.checked?"auto":"review")}}/></label><label><small>Maximum retries</small><input className="input" type="number" min="1" max="8" value={settings.maxRetries??3} onChange={e=>setSettings("maxRetries",Number(e.target.value))}/></label><Button disabled={saving} onClick={save}>{saving?"Saving…":"Save changes"}</Button></section></div></section>
 }
