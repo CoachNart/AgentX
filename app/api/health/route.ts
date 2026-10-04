@@ -1,0 +1,2 @@
+import {NextResponse} from "next/server"; import {xConfigured} from "../../../lib/x";
+export function GET(){return NextResponse.json({ok:true,service:"agentx",xConfigured:xConfigured(),timestamp:new Date().toISOString()})}
