@@ -24,8 +24,13 @@ function normalizePrivateKey(value?: string): string | undefined {
     key = key.slice(1, -1);
   }
 
-  key = key.replace(/\\\\n/g, "\n").replace(/\\r/g, "\r").replace(/\\\"/g, '"');
-  key = key.replace(/\\r/g, "").trim();
+  // Vercel commonly stores PEM newlines as the literal characters \\n.
+  // Accept both one and two levels of escaping so the Firebase SDK receives
+  // real PEM line breaks rather than the escaped string.
+  key = key.replace(/\\\\n/g, "\n").replace(/\\n/g, "\n");
+  key = key.replace(/\\\\r/g, "\r").replace(/\\r/g, "\r");
+  key = key.replace(/\\\"/g, '"').replace(/\\'/g, "'");
+  key = key.replace(/\r/g, "").trim();
 
   return key || undefined;
 }
