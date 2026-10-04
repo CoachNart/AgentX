@@ -9,20 +9,26 @@ function normalizePrivateKey(value?: string): string | undefined {
   if (!value) return undefined;
   let key = value.trim();
 
-  // Vercel/env files commonly carry PEM newlines as literal \\n.
-  key = key.replace(/\\\\n/g, "\n").replace(/\\r/g, "\r");
-
-  // Also tolerate a JSON/string-quoted value accidentally pasted into the env.
-  if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) {
-    key = key.slice(1, -1).replace(/\\\\n/g, "\n").replace(/\\r/g, "\r").trim();
+  // Accept a directly supplied PEM, literal \\n sequences, or an accidentally
+  // pasted service-account JSON object. Never log the credential.
+  if (key.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(key) as { private_key?: unknown };
+      if (typeof parsed.private_key === "string") key = parsed.private_key;
+    } catch {
+      // Fall through to the normal PEM validation path.
+    }
   }
 
-  // Normalize CRLF and surrounding whitespace without changing the key body.
+  if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) {
+    key = key.slice(1, -1);
+  }
+
+  key = key.replace(/\\\\n/g, "\n").replace(/\\r/g, "\r").replace(/\\\"/g, '"');
   key = key.replace(/\\r/g, "").trim();
 
   return key || undefined;
 }
-
 function firebaseDb(): Firestore {
   const projectId = process.env.FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
