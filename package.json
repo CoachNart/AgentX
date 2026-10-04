@@ -1,8 +1,1 @@
-{
-  "name": "agentx",
-  "version": "0.1.0",
-  "private": true,
-  "scripts": {"dev":"next dev","build":"next build","start":"next start","lint":"next lint","typecheck":"tsc --noEmit"},
-  "dependencies": {"next":"latest","react":"latest","react-dom":"latest","zod":"latest"},
-  "devDependencies": {"@types/node":"latest","@types/react":"latest","@types/react-dom":"latest","typescript":"latest","tailwindcss":"latest","@tailwindcss/postcss":"latest"}
-}
+{"name":"agentx","version":"1.0.0","private":true,"scripts":{"dev":"next dev","build":"prisma generate && next build","start":"next start","lint":"eslint .","typecheck":"tsc --noEmit","test":"vitest run","test:watch":"vitest","db:generate":"prisma generate","db:migrate":"prisma migrate dev","db:deploy":"prisma migrate deploy","db:studio":"prisma studio"},"dependencies":{"@prisma/client":"latest","next":"latest","react":"latest","react-dom":"latest","zod":"latest"},"devDependencies":{"@types/node":"latest","@types/react":"latest","@types/react-dom":"latest","eslint":"latest","eslint-config-next":"latest","prisma":"latest","tailwindcss":"latest","@tailwindcss/postcss":"latest","typescript":"latest","vitest":"latest"}}

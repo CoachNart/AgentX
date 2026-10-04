@@ -1,6 +1,1 @@
-import type {JobStatus} from "./types";
-const transitions:Record<JobStatus,JobStatus[]>={
-processing:["ready","failed"],ready:["approved","skipped","failed"],approved:["publishing","skipped","failed"],publishing:["published","failed","rate_limited"],published:[],failed:["processing","skipped"],skipped:[],rate_limited:["approved","skipped"]};
-export function canTransition(from:JobStatus,to:JobStatus){return transitions[from].includes(to)}
-export function assertTransition(from:JobStatus,to:JobStatus){if(!canTransition(from,to))throw new Error(`Invalid queue transition: ${from} → ${to}`)}
-export const initialJob=(id:string)=>({id,status:"processing" as const,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()});
+import type {JobStatus} from './types';const transitions:Record<JobStatus,JobStatus[]>={processing:['ready','failed'],ready:['approved','skipped','failed'],approved:['publishing','skipped','failed'],publishing:['published','failed','rate_limited'],published:[],failed:['processing','skipped'],skipped:[],rate_limited:['approved','skipped']};export function canTransition(from:JobStatus,to:JobStatus){return transitions[from].includes(to)}export function assertTransition(from:JobStatus,to:JobStatus){if(!canTransition(from,to))throw new Error('Invalid queue transition: '+from+' → '+to)}export const initialJob=(id:string)=>({id,status:'processing' as const,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()});
