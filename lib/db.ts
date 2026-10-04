@@ -5,10 +5,28 @@ import { randomUUID } from "node:crypto";
 type AnyRecord = Record<string, any>;
 type Where = AnyRecord | undefined;
 
+function normalizePrivateKey(value?: string): string | undefined {
+  if (!value) return undefined;
+  let key = value.trim();
+
+  // Vercel/env files commonly carry PEM newlines as literal \\n.
+  key = key.replace(/\\\\n/g, "\n").replace(/\\r/g, "\r");
+
+  // Also tolerate a JSON/string-quoted value accidentally pasted into the env.
+  if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) {
+    key = key.slice(1, -1).replace(/\\\\n/g, "\n").replace(/\\r/g, "\r").trim();
+  }
+
+  // Normalize CRLF and surrounding whitespace without changing the key body.
+  key = key.replace(/\\r/g, "").trim();
+
+  return key || undefined;
+}
+
 function firebaseDb(): Firestore {
   const projectId = process.env.FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");
+  const privateKey = normalizePrivateKey(process.env.FIREBASE_PRIVATE_KEY);
   if (!projectId || !clientEmail || !privateKey) {
     throw new Error("Firestore is not configured. Add FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL and FIREBASE_PRIVATE_KEY.");
   }
