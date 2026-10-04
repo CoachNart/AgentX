@@ -201,14 +201,17 @@ function modelApi(model: keyof typeof collections) {
     },
     async createMany(args: AnyRecord) {
       const rows = Array.isArray(args.data) ? args.data : [];
-      const batch = firebaseDb().batch();
       const created: AnyRecord[] = [];
-      for (const item of rows) {
-        const row = defaults(model, item);
-        batch.set(firebaseDb().collection(collections[model]).doc(row.id), clean(row));
-        created.push(row);
+      for (let start = 0; start < rows.length; start += 450) {
+        const chunk = rows.slice(start, start + 450);
+        const batch = firebaseDb().batch();
+        for (const item of chunk) {
+          const row = defaults(model, item);
+          batch.set(firebaseDb().collection(collections[model]).doc(row.id), clean(row));
+          created.push(row);
+        }
+        await batch.commit();
       }
-      await batch.commit();
       return { count: created.length };
     },
     async update(args: AnyRecord) {
