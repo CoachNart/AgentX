@@ -32,6 +32,24 @@ function normalizePrivateKey(value?: string): string | undefined {
   key = key.replace(/\\\"/g, '"').replace(/\\'/g, "'");
   key = key.replace(/\r/g, "").trim();
 
+  // Also accept a base64-encoded PEM or service-account JSON. This covers
+  // credentials copied through systems that base64-encode secret values.
+  if (!key.includes("BEGIN PRIVATE KEY") && !key.includes("BEGIN RSA PRIVATE KEY")) {
+    try {
+      const decoded = Buffer.from(key, "base64").toString("utf8").trim();
+      if (decoded.includes("BEGIN PRIVATE KEY") || decoded.includes("BEGIN RSA PRIVATE KEY") || decoded.startsWith("{")) {
+        key = decoded;
+        if (key.startsWith("{")) {
+          const parsed = JSON.parse(key) as { private_key?: unknown };
+          if (typeof parsed.private_key === "string") key = parsed.private_key;
+          key = key.replace(/\\\\n/g, "\n").replace(/\\n/g, "\n").replace(/\r/g, "").trim();
+        }
+      }
+    } catch {
+      // Keep the original value so Firebase can report the credential error.
+    }
+  }
+
   return key || undefined;
 }
 function firebaseDb(): Firestore {
