@@ -1,1 +1,14 @@
-import{NextResponse}from'next/server';import{db}from'../../../lib/db';export async function GET(){try{await db.$queryRaw`SELECT 1`;return NextResponse.json({ok:true,service:'agentx',database:'ok',timestamp:new Date().toISOString()})}catch(e){return NextResponse.json({ok:false,service:'agentx',database:'error',error:e instanceof Error?e.message:'database unavailable'},{status:503})}}
+import {NextResponse} from 'next/server';
+import {db} from '../../../lib/db';
+
+export async function GET() {
+  try {
+    await db.user.count();
+    return NextResponse.json({ok:true,service:'agentx',database:'ok',timestamp:new Date().toISOString()});
+  } catch (e) {
+    return NextResponse.json(
+      {ok:false,service:'agentx',database:'error',error:e instanceof Error?e.message:'database unavailable'},
+      {status:503},
+    );
+  }
+}
