@@ -1,9 +1,1 @@
-import { describe, expect, it } from 'vitest';
-import { parseXUrls } from '../lib/url-parser';
-describe('parseXUrls', () => {
-  it('normalizes and deduplicates', () => {
-    const r = parseXUrls('https://x.com/a/status/123456 https://twitter.com/a/status/123456 https://x.com/b/status/987654');
-    expect(r.valid.map(x => x.postId)).toEqual(['123456', '987654']);
-    expect(r.duplicates).toHaveLength(1);
-  });
-});
+import{describe,expect,it}from'vitest';import{parseXUrls}from'../lib/url-parser';describe('parseXUrls',()=>{it('normalizes and deduplicates',()=>{const r=parseXUrls('https://x.com/a/status/123456 https://twitter.com/a/status/123456 https://x.com/b/status/987654');expect(r.valid.map(x=>x.postId)).toEqual(['123456','987654']);expect(r.duplicates).toHaveLength(1)})})

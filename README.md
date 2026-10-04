@@ -1,24 +1,21 @@
 # AgentX
 
-Production foundation for a quality-first X engagement assistant.
+Quality-first X engagement assistant built around official X access, user review and durable jobs.
+
+## Flow
+Connect X with OAuth 2.0 + PKCE → paste links → normalize/deduplicate → persist batch → fetch permitted X data → analyze → generate → quality/repetition checks → review/edit/approve/skip → durable publish job → publish → record outcome.
 
 ## Stack
-Next.js App Router + TypeScript + Tailwind CSS + Zod.
+Next.js, TypeScript, Tailwind, PostgreSQL, Prisma, Zod, server-side AI provider and official X API.
 
-## Core workflow
-Paste X links → validate/deduplicate → fetch through official X API → analyze server-side → generate context-aware reply → quality/repetition checks → review → approve → publish through permitted X API access.
+## Setup
+Copy .env.example to .env.local, create PostgreSQL, run npm install, run npm run db:migrate locally or npm run db:deploy in production, configure X callback and scopes, set AI credentials, then npm run dev.
+
+## Worker
+/api/queue/worker is the durable worker endpoint. CRON_SECRET protects it when set. Stale locks are recovered. A unique publication job and publishedReplyId prevent duplicate replies.
+
+## Vercel
+The included cron is daily because Vercel Hobby scheduling is daily-only. For near-real-time processing use an external scheduler/queue or a plan with the needed cron frequency.
 
 ## Safety
-AgentX does not implement detection evasion, identity rotation, API-limit bypasses, credential scraping, spoofing, or deceptive engagement automation.
-
-## Environment
-Copy .env.example to .env.local and provide provider credentials only on the server. Never expose secrets to client code.
-
-## Next implementation layers
-1. PostgreSQL/Prisma persistence and migrations.
-2. Official X OAuth 2.0 flow and encrypted token storage.
-3. Server-side X API adapter.
-4. AI analysis/reply/evaluation services with Zod schemas.
-5. Durable queue and idempotent publishing jobs.
-6. Review, history, settings, voice profile, diagnostics.
-7. Unit/integration/E2E tests with mocked external APIs.
+No passwords, cookies, browser session tokens, detection evasion, identity rotation, rate-limit bypass or deceptive automation.
