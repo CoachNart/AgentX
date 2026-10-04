@@ -1,0 +1,6 @@
+import {z} from "zod";
+export const xPostSchema=z.object({id:z.string(),author:z.string(),username:z.string(),text:z.string(),createdAt:z.string().optional(),media:z.array(z.string()).default([]),conversationContext:z.string().optional(),quotedPost:z.string().optional(),metrics:z.object({likes:z.number().optional(),reposts:z.number().optional(),replies:z.number().optional()}).optional()});
+export const analysisSchema=z.object({category:z.enum(["educational","announcement","opinion","product","technical","market/trading","personal","achievement","question","meme/humor","news","community","promotional"]),summary:z.string().min(1),keyPoints:z.array(z.string()).max(8),tone:z.string(),claims:z.array(z.string()).max(8)});
+export const replySchema=z.object({reply:z.string().min(1).max(500),reason:z.string().min(1),confidence:z.number().min(0).max(100)});
+export const qualitySchema=z.object({relevance:z.number().min(0).max(100),specificity:z.number().min(0).max(100),naturalness:z.number().min(0).max(100),value:z.number().min(0).max(100),repetitionRisk:z.number().min(0).max(100),approved:z.boolean(),reasons:z.array(z.string())});
+export type XPost=z.infer<typeof xPostSchema>; export type Analysis=z.infer<typeof analysisSchema>; export type Reply=z.infer<typeof replySchema>; export type Quality=z.infer<typeof qualitySchema>;
