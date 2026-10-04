@@ -12,7 +12,7 @@ type Post = {
 type Account = { username:string;name?:string|null;avatarUrl?:string|null };
 
 const tabs:Tab[]=["Dashboard","New Batch","Queue","History","Settings"];
-const icons:Record<Tab,string>={Dashboard:"⌂","New Batch":"+","Queue:"≡","History:"◷","Settings:"⚙"};
+const icons:Record<Tab,string>={Dashboard:"⌂","New Batch":"+","Queue":"≡","History":"◷","Settings":"⚙"};
 
 function Button(p:{children:React.ReactNode;onClick?:()=>void;disabled?:boolean;secondary?:boolean;danger?:boolean}) {
   return <button onClick={p.onClick} disabled={p.disabled} className={p.danger?"btn btn-danger":p.secondary?"btn btn-secondary":"btn btn-primary"}>{p.children}</button>;
