@@ -1,0 +1,2 @@
+import {NextResponse} from "next/server"; import {parseXUrls} from "../../../../lib/url-parser";
+export async function POST(req:Request){try{const body=await req.json();if(typeof body.input!=="string")return NextResponse.json({error:"input must be a string"},{status:400});return NextResponse.json(parseXUrls(body.input));}catch{return NextResponse.json({error:"Unable to validate batch."},{status:400})}}
