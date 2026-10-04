@@ -1,21 +1,32 @@
 # AgentX
 
-Quality-first X engagement assistant built around official X access, user review and durable jobs.
+AgentX is an AI-assisted workflow application for working with selected X posts through the official X API.
 
-## Flow
-Connect X with OAuth 2.0 + PKCE → paste links → normalize/deduplicate → persist batch → fetch permitted X data → analyze → generate → quality/repetition checks → review/edit/approve/skip → durable publish job → publish → record outcome.
+## Persistence
 
-## Stack
-Next.js, TypeScript, Tailwind, PostgreSQL, Prisma, Zod, server-side AI provider and official X API.
+AgentX uses **Firebase Firestore** through the server-side Firebase Admin SDK. No Firebase client credentials are exposed to the browser.
 
-## Setup
-Copy .env.example to .env.local, create PostgreSQL, run npm install, run npm run db:migrate locally or npm run db:deploy in production, configure X callback and scopes, set AI credentials, then npm run dev.
+Set these server-side environment variables:
 
-## Worker
-/api/queue/worker is the durable worker endpoint. CRON_SECRET protects it when set. Stale locks are recovered. A unique publication job and publishedReplyId prevent duplicate replies.
+- `FIREBASE_PROJECT_ID`
+- `FIREBASE_CLIENT_EMAIL`
+- `FIREBASE_PRIVATE_KEY`
+- `ENCRYPTION_KEY`
 
-## Vercel
-The included cron is daily because Vercel Hobby scheduling is daily-only. For near-real-time processing use an external scheduler/queue or a plan with the needed cron frequency.
+X OAuth, AI, queue processing, review, approval and publishing continue to use the existing server-side architecture.
 
-## Safety
-No passwords, cookies, browser session tokens, detection evasion, identity rotation, rate-limit bypass or deceptive automation.
+## Local development
+
+```bash
+npm install
+npm run dev
+```
+
+## Validation
+
+```bash
+npm run lint
+npm run typecheck
+npm test
+npm run build
+```
