@@ -1,17 +1,223 @@
-generator client { provider = "prisma-client-js" }
-datasource db { provider = "postgresql" url = env("DATABASE_URL") }
-enum JobStatus { PROCESSING READY APPROVED PUBLISHING PUBLISHED FAILED SKIPPED RATE_LIMITED }
-enum ApprovalStatus { PENDING APPROVED SKIPPED }
-enum BatchStatus { PROCESSING READY COMPLETED FAILED }
-enum PublicationStatus { PENDING PUBLISHED FAILED RATE_LIMITED ALREADY_ENGAGED }
-model User { id String @id @default(cuid()) createdAt DateTime @default(now()) updatedAt DateTime @updatedAt xAccount XAccount? batches Batch[] posts Post[] voiceProfile VoiceProfile? settings Settings? auditLogs AuditLog[] }
-model XAccount { id String @id @default(cuid()) userId String @unique xUserId String @unique username String name String? avatarUrl String? accessTokenEnc String refreshTokenEnc String? accessTokenExpires DateTime? scope String? createdAt DateTime @default(now()) updatedAt DateTime @updatedAt user User @relation(fields:[userId],references:[id],onDelete:Cascade) }
-model Batch { id String @id @default(cuid()) userId String label String? imported Int @default(0) valid Int @default(0) duplicates Int @default(0) invalid Int @default(0) status BatchStatus @default(PROCESSING) createdAt DateTime @default(now()) updatedAt DateTime @updatedAt completedAt DateTime? user User @relation(fields:[userId],references:[id],onDelete:Cascade) posts Post[] @@index([userId,createdAt]) }
-model Post { id String @id @default(cuid()) userId String batchId String xPostId String postUrl String authorId String? authorUsername String? authorName String? authorAvatarUrl String? postText String? postedAt DateTime? media Json? conversationContext String? quotedPost Json? metrics Json? analysis Json? analysisRecord PostAnalysis? generatedReply String? generationReason String? confidence Float? qualityScore Float? quality Json? repetitionChecked Boolean @default(false) status JobStatus @default(PROCESSING) approvalStatus ApprovalStatus @default(PENDING) publishedReplyId String? @unique publishedAt DateTime? errorMessage String? attempts Int @default(0) lockedAt DateTime? createdAt DateTime @default(now()) updatedAt DateTime @updatedAt user User @relation(fields:[userId],references:[id],onDelete:Cascade) batch Batch @relation(fields:[batchId],references:[id],onDelete:Cascade) generations ReplyGeneration[] attemptsLog ReplyAttempt[] publishingJobs PublishingJob[] @@unique([userId,xPostId]) @@index([userId,status,createdAt]) @@index([batchId,status]) }
-model PostAnalysis { id String @id @default(cuid()) postId String @unique data Json createdAt DateTime @default(now()) updatedAt DateTime @updatedAt post Post @relation(fields:[postId],references:[id],onDelete:Cascade) }
-model ReplyGeneration { id String @id @default(cuid()) postId String reply String reason String confidence Float qualityScore Float? quality Json? createdAt DateTime @default(now()) post Post @relation(fields:[postId],references:[id],onDelete:Cascade) @@index([postId,createdAt]) }
-model ReplyAttempt { id String @id @default(cuid()) postId String kind String status String latencyMs Int? error String? metadata Json? createdAt DateTime @default(now()) post Post @relation(fields:[postId],references:[id],onDelete:Cascade) @@index([postId,createdAt]) }
-model PublishingJob { id String @id @default(cuid()) postId String @unique userId String status PublicationStatus @default(PENDING) attempts Int @default(0) nextAttemptAt DateTime? publishedReplyId String? errorMessage String? rateLimitReset DateTime? lockedAt DateTime? createdAt DateTime @default(now()) updatedAt DateTime @updatedAt post Post @relation(fields:[postId],references:[id],onDelete:Cascade) @@index([userId,status,nextAttemptAt]) }
-model VoiceProfile { id String @id @default(cuid()) userId String @unique tone String @default("conversational") personality String @default("curious, useful, concise") vocabulary String? preferredLength String @default("10-30 words") emojiUsage String @default("rare") slang String? avoidWords String? avoidPhrases String? topics String? professional Int @default(50) examples Json? createdAt DateTime @default(now()) updatedAt DateTime @updatedAt user User @relation(fields:[userId],references:[id],onDelete:Cascade) }
-model Settings { id String @id @default(cuid()) userId String @unique qualityThreshold Int @default(80) publishingMode String @default("review") autoPublish Boolean @default(false) maxRetries Int @default(3) createdAt DateTime @default(now()) updatedAt DateTime @updatedAt user User @relation(fields:[userId],references:[id],onDelete:Cascade) }
-model AuditLog { id String @id @default(cuid()) userId String? action String entity String? entityId String? metadata Json? createdAt DateTime @default(now()) user User? @relation(fields:[userId],references:[id],onDelete:SetNull) @@index([userId,createdAt]) }
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum JobStatus {
+  PROCESSING
+  READY
+  APPROVED
+  PUBLISHING
+  PUBLISHED
+  FAILED
+  SKIPPED
+  RATE_LIMITED
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  SKIPPED
+}
+
+enum BatchStatus {
+  PROCESSING
+  READY
+  COMPLETED
+  FAILED
+}
+
+enum PublicationStatus {
+  PENDING
+  PUBLISHED
+  FAILED
+  RATE_LIMITED
+  ALREADY_ENGAGED
+}
+
+model User {
+  id String @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  xAccount XAccount?
+  batches Batch[]
+  posts Post[]
+  voiceProfile VoiceProfile?
+  settings Settings?
+  auditLogs AuditLog[]
+}
+
+model XAccount {
+  id String @id @default(cuid())
+  userId String @unique
+  xUserId String @unique
+  username String
+  name String?
+  avatarUrl String?
+  accessTokenEnc String
+  refreshTokenEnc String?
+  accessTokenExpires DateTime?
+  scope String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Batch {
+  id String @id @default(cuid())
+  userId String
+  label String?
+  imported Int @default(0)
+  valid Int @default(0)
+  duplicates Int @default(0)
+  invalid Int @default(0)
+  status BatchStatus @default(PROCESSING)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  completedAt DateTime?
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  posts Post[]
+  @@index([userId, createdAt])
+}
+
+model Post {
+  id String @id @default(cuid())
+  userId String
+  batchId String
+  xPostId String
+  postUrl String
+  authorId String?
+  authorUsername String?
+  authorName String?
+  authorAvatarUrl String?
+  postText String?
+  postedAt DateTime?
+  media Json?
+  conversationContext String?
+  quotedPost Json?
+  metrics Json?
+  analysis Json?
+  analysisRecord PostAnalysis?
+  generatedReply String?
+  generationReason String?
+  confidence Float?
+  qualityScore Float?
+  quality Json?
+  repetitionChecked Boolean @default(false)
+  status JobStatus @default(PROCESSING)
+  approvalStatus ApprovalStatus @default(PENDING)
+  publishedReplyId String? @unique
+  publishedAt DateTime?
+  errorMessage String?
+  attempts Int @default(0)
+  lockedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  batch Batch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  generations ReplyGeneration[]
+  attemptsLog ReplyAttempt[]
+  publishingJobs PublishingJob[]
+  @@unique([userId, xPostId])
+  @@index([userId, status, createdAt])
+  @@index([batchId, status])
+}
+
+model PostAnalysis {
+  id String @id @default(cuid())
+  postId String @unique
+  data Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+}
+
+model ReplyGeneration {
+  id String @id @default(cuid())
+  postId String
+  reply String
+  reason String
+  confidence Float
+  qualityScore Float?
+  quality Json?
+  createdAt DateTime @default(now())
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  @@index([postId, createdAt])
+}
+
+model ReplyAttempt {
+  id String @id @default(cuid())
+  postId String
+  kind String
+  status String
+  latencyMs Int?
+  error String?
+  metadata Json?
+  createdAt DateTime @default(now())
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  @@index([postId, createdAt])
+}
+
+model PublishingJob {
+  id String @id @default(cuid())
+  postId String @unique
+  userId String
+  status PublicationStatus @default(PENDING)
+  attempts Int @default(0)
+  nextAttemptAt DateTime?
+  publishedReplyId String?
+  errorMessage String?
+  rateLimitReset DateTime?
+  lockedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  @@index([userId, status, nextAttemptAt])
+}
+
+model VoiceProfile {
+  id String @id @default(cuid())
+  userId String @unique
+  tone String @default("conversational")
+  personality String @default("curious, useful, concise")
+  vocabulary String?
+  preferredLength String @default("10-30 words")
+  emojiUsage String @default("rare")
+  slang String?
+  avoidWords String?
+  avoidPhrases String?
+  topics String?
+  professional Int @default(50)
+  examples Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Settings {
+  id String @id @default(cuid())
+  userId String @unique
+  qualityThreshold Int @default(80)
+  publishingMode String @default("review")
+  autoPublish Boolean @default(false)
+  maxRetries Int @default(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id String @id @default(cuid())
+  userId String?
+  action String
+  entity String?
+  entityId String?
+  metadata Json?
+  createdAt DateTime @default(now())
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  @@index([userId, createdAt])
+}
