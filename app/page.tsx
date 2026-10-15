@@ -29,11 +29,11 @@ export default function Home(){
   const refresh=async()=>{
     try{
       const status=await fetch("/api/auth/status",{credentials:"include",cache:"no-store"}),sd=await status.json();
-      if(!status.ok||!sd.connected){setAccount(null);setQueue([]);setLoading(false);return}
+      if(!status.ok||!sd.connected){setAccount(null);setLoading(false);return}
       setAccount(sd.account as Account);
       const r=await fetch("/api/dashboard",{credentials:"include",cache:"no-store"});
       if(r.ok){const d=await r.json();setStats(d.stats);setQueue(d.queue)}
-    }catch{setAccount(null);setQueue([])}finally{setLoading(false)}
+    }catch{setAccount(null)}finally{setLoading(false)}
   };
   useEffect(()=>{
     try {
@@ -193,17 +193,17 @@ function Dashboard({stats,queue,onNew,onQueue}:{stats:any;queue:Post[];onNew:()=
 function Queue(p:{queue:Post[];onReview:(id:string,a:"approve"|"skip")=>void;onRegenerate:(id:string)=>void;onPublish:()=>void;busy:boolean}){
   const approved=p.queue.filter(x=>x.status==="APPROVED").length;
   return <section className="page-section"><div className="page-intro queue-intro"><div><span className="eyebrow">Review center</span><h1>Publishing queue</h1><p>Read, edit externally if needed, approve or skip. Nothing is published just because it was generated.</p></div><Button disabled={!approved||p.busy} onClick={p.onPublish}>Publish approved ({approved})</Button></div>
-    <section className="premium-card queue-card">{!p.queue.length?<div className="dash-empty large"><span>✓</span><strong>No posts waiting</strong><p>Your active queue is empty. Start a new batch when you are ready.</p></div>:<div className="queue-list">{p.queue.map(x=><article key={x.id} className="queue-item"><div className="post-meta"><div className="mini-avatar">{(x.authorName||"X").slice(0,1).toUpperCase()}</div><div><b>{x.authorName||"X user"}</b><span>{x.authorUsername?"@"+x.authorUsername:""}</span></div><i className={"status-tag "+x.status.toLowerCase()}>{x.status.toLowerCase().replace("_"," ")}</i></div><p className="post-text">{x.postText||x.errorMessage||"Waiting for X post data…"}</p>{x.generatedReply&&<div className="reply-box"><div className="reply-label">AgentX reply</div><p>“{x.generatedReply}”</p><div className="quality-row"><span>Confidence <b>{Math.round(x.confidence||0)}</b></span><span>Quality <b>{Math.round(x.qualityScore||0)}</b></span></div></div>}{x.status==="READY"&&<div className="row-actions"><Button secondary onClick={()=>p.onReview(x.id,"skip")}>Skip</Button><Button secondary onClick={()=>p.onRegenerate(x.id)}>Regenerate</Button><Button onClick={()=>p.onReview(x.id,"approve")}>Approve reply</Button></div>}</article>)}</div>}</section>
+    <section className="premium-card queue-card">{!p.queue.length?<div className="dash-empty large"><span>✓</span><strong>No posts waiting</strong><p>Your active queue is empty. Start a new batch when you are ready.</p></div>:<div className="queue-list">{p.queue.map(x=><article key={x.id} className="queue-item"><div className="post-meta"><div className="mini-avatar">{(x.authorName||"X").slice(0,1).toUpperCase()}</div><div><b>{x.authorName||"X user"}</b><span>{x.authorUsername?"@"+x.authorUsername:""}</span></div><i className={"status-tag "+x.status.toLowerCase()}>{x.status.toLowerCase().replace("_"," ")}</i></div><p className="post-text">{x.postText||x.errorMessage||"Waiting for X post data…"}</p>{x.generatedReply&&<div className="reply-box"><div className="reply-label">AgentX reply</div><p>“{x.generatedReply}”</p><div className="quality-row"><span>Confidence <b>{Math.round(x.confidence||0)}</b></span><span>Quality <b>{Math.round(x.qualityScore||0)}</b></span></div></div>}{(x.status==="READY"||x.status==="FAILED")&&<div className="row-actions"><Button secondary onClick={()=>p.onReview(x.id,"skip")}>Skip</Button><Button secondary onClick={()=>p.onRegenerate(x.id)}>Regenerate</Button><Button onClick={()=>p.onReview(x.id,"approve")}>Approve reply</Button></div>}</article>)}</div>}</section>
   </section>
 }
 
-function History(){const[data,setData]=useState<any>(null);useEffect(()=>{
+function History(){const[data,setData]=useState<any>({batches:[]});useEffect(()=>{
   try{const saved=localStorage.getItem("agentx.history.v1");if(saved)setData(JSON.parse(saved));}catch{}
   fetch("/api/history").then(async r=>{if(!r.ok)return null;return r.json()}).then(d=>{if(d){setData(d);try{localStorage.setItem("agentx.history.v1",JSON.stringify(d))}catch{}}}).catch(()=>{});
 },[]);return <section className="page-section"><PageIntro eyebrow="Archive" title="Batch history" text="A record of your previous imports and processing outcomes."/><div className="history-list">{!data?<div className="premium-card dash-empty">Loading history…</div>:data.batches?.length?data.batches.map((b:any)=><div className="premium-card history-row" key={b.id}><div><span className="history-dot"/><div><b>{b.label||b.id}</b><small>{b.valid} valid · {b.duplicates} duplicates · {b.invalid} invalid</small></div></div><span className="history-status">{b.status.toLowerCase()}</span></div>):<div className="premium-card dash-empty"><span>◷</span><strong>No batches yet</strong><p>Your processed batches will appear here.</p></div>}</div></section>}
 
 function Settings(){
-  const[data,setData]=useState<any>(null),[saving,setSaving]=useState(false);
+  const[data,setData]=useState<any>({voice:{tone:"conversational",personality:"curious, useful, concise",preferredLength:"10-30 words",emojiUsage:"rare",professional:50},settings:{qualityThreshold:80,publishingMode:"review",autoPublish:false,maxRetries:3}}),[saving,setSaving]=useState(false);
   useEffect(()=>{
     try{const saved=localStorage.getItem("agentx.settings.v1");if(saved)setData(JSON.parse(saved));}catch{}
     fetch("/api/settings").then(async r=>{if(!r.ok)return null;return r.json()}).then(d=>{if(d){setData(d);try{localStorage.setItem("agentx.settings.v1",JSON.stringify(d))}catch{}}}).catch(()=>{});
