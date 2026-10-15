@@ -58,25 +58,63 @@ export default function Home(){
 
   const connect=()=>{window.location.href="/api/auth/x/start"};
   const disconnect=async()=>{await fetch("/api/auth/x/disconnect",{method:"POST"});setAccount(null);setQueue([])};
+  const saveLocalHistory=(batch:any)=>{
+    try{const current=JSON.parse(localStorage.getItem("agentx.history.v1")||'{"batches":[]}');const batches=Array.isArray(current.batches)?current.batches:[];localStorage.setItem("agentx.history.v1",JSON.stringify({batches:[batch,...batches].slice(0,100)}));}catch{}
+  };
+  const getLocalPrefs=()=>{
+    try{return JSON.parse(localStorage.getItem("agentx.settings.v1")||"{}")}catch{return {}}
+  };
+  const recalcStats=(items:Post[],submitted?:number)=>{
+    setStats(s=>({...s,submitted:submitted??s.submitted,generated:items.filter(x=>!!x.generatedReply).length,approved:items.filter(x=>x.status==="APPROVED"||x.approvalStatus==="APPROVED").length,published:items.filter(x=>x.status==="PUBLISHED").length,skipped:items.filter(x=>x.status==="SKIPPED").length,failed:items.filter(x=>x.status==="FAILED").length}));
+  };
+  const processLocalPost=async(item:Post&{xPostId:string},previous:Post[])=>{
+    const prefs=getLocalPrefs();
+    const r=await fetch("/api/local/process",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({xPostId:item.xPostId,voice:prefs.voice||{},settings:prefs.settings||{},previousReplies:previous.map(x=>x.generatedReply).filter(Boolean)})});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||"Unable to process post.");
+    return {...item,...d.post,id:item.id,xPostId:item.xPostId};
+  };
   const createBatch=async()=>{
     setBusy(true);setMessage("");
     try{
-      const r=await fetch("/api/batch/create",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({input})}),d=await r.json();
-      if(!r.ok)throw new Error(d.error);
-      setMessage("Batch accepted. The durable worker is processing the posts.");setInput("");setTab("Queue");await fetch("/api/queue/worker");await refresh();
+      const parsedInput=parsed;
+      if(!parsedInput.valid.length)throw new Error("No valid X post links were found.");
+      const ids=new Set(queue.map(x=>x.xPostId));
+      const fresh=parsedInput.valid.filter(x=>!ids.has(x.postId));
+      if(!fresh.length)throw new Error("All valid links are already saved in your local workspace.");
+      const batchId=crypto.randomUUID(),createdAt=new Date().toISOString();
+      const initial=fresh.map(x=>({id:crypto.randomUUID(),xPostId:x.postId,postUrl:x.url,status:"PROCESSING",approvalStatus:"PENDING",postText:"Fetching post from X…",createdAt,updatedAt:createdAt,batchId} as Post&{xPostId:string;postUrl:string;createdAt:string;updatedAt:string;batchId:string}));
+      let all=[...initial,...queue];setQueue(all);setInput("");setTab("Queue");
+      saveLocalHistory({id:batchId,label:"New batch",imported:parsedInput.imported,valid:fresh.length,duplicates:parsedInput.duplicates.length+parsedInput.valid.length-fresh.length,invalid:parsedInput.invalid.length,status:"PROCESSING",createdAt});
+      recalcStats(all,stats.submitted+fresh.length);
+      let succeeded=0;
+      for(const item of initial){
+        try{const processed=await processLocalPost(item,all.filter(x=>x.generatedReply));all=all.map(x=>x.id===item.id?processed:x);succeeded++;}
+        catch(e){all=all.map(x=>x.id===item.id?{...x,status:"FAILED",errorMessage:e instanceof Error?e.message:"Processing failed.",postText:"Unable to load post from X."}:x);}
+        setQueue([...all]);recalcStats(all,stats.submitted+fresh.length);
+      }
+      saveLocalHistory({id:batchId,label:"New batch",imported:parsedInput.imported,valid:fresh.length,duplicates:parsedInput.duplicates.length+parsedInput.valid.length-fresh.length,invalid:parsedInput.invalid.length,status:"COMPLETED",createdAt});
+      setMessage("Saved "+fresh.length+" post(s) on this device. "+succeeded+" processed successfully.");
     }catch(e){setMessage(e instanceof Error?e.message:"Unable to create batch.")}finally{setBusy(false)}
   };
   const review=async(id:string,action:"approve"|"skip")=>{
-    await fetch("/api/queue/approve",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({postId:id,action})});await refresh()
+    const next=queue.map(x=>x.id===id?{...x,status:action==="approve"?"APPROVED":"SKIPPED",approvalStatus:action==="approve"?"APPROVED":"SKIPPED"}:x);
+    setQueue(next);recalcStats(next);setMessage(action==="approve"?"Reply approved locally.":"Post skipped.");
   };
   const regenerate=async(id:string)=>{
-    setBusy(true);const r=await fetch("/api/queue/regenerate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({postId:id})}),d=await r.json();
-    setMessage(r.ok?"Reply regenerated.":d.error);await refresh();setBusy(false)
+    const item=queue.find(x=>x.id===id) as (Post&{xPostId:string})|undefined;if(!item)return;
+    setBusy(true);try{const processed=await processLocalPost(item,queue.filter(x=>x.id!==id&&x.generatedReply));const next=queue.map(x=>x.id===id?processed:x);setQueue(next);recalcStats(next);setMessage(processed.generatedReply?"Reply regenerated.":"A reply could not be approved by quality checks.");}catch(e){setMessage(e instanceof Error?e.message:"Reply regeneration failed.")}finally{setBusy(false)}
   };
   const publish=async()=>{
-    const ids=queue.filter(x=>x.status==="APPROVED").map(x=>x.id);if(!ids.length)return;
-    setBusy(true);const r=await fetch("/api/publish",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({postIds:ids})}),d=await r.json();
-    setMessage(r.ok?d.queued+" approved replies placed in the publishing queue.":d.error);await fetch("/api/queue/worker");await refresh();setBusy(false)
+    const approved=queue.filter(x=>x.status==="APPROVED"&&x.generatedReply);
+    if(!approved.length)return;
+    setBusy(true);let next=[...queue],published=0;
+    for(const item of approved){
+      try{const r=await fetch("/api/local/publish",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({xPostId:item.xPostId,reply:item.generatedReply})}),d=await r.json();if(!r.ok)throw new Error(d.error||"Publishing failed.");next=next.map(x=>x.id===item.id?{...x,status:"PUBLISHED",publishedAt:d.publishedAt,publishedReplyId:d.id}:x);published++;}
+      catch(e){next=next.map(x=>x.id===item.id?{...x,status:"FAILED",errorMessage:e instanceof Error?e.message:"Publishing failed."}:x);}
+      setQueue([...next]);
+    }
+    recalcStats(next);setMessage(published+" approved reply/replies published.");setBusy(false)
   };
 
   if(loading)return <div className="loading-screen"><div className="loading-mark">AX</div><span>Loading workspace</span></div>;
