@@ -22,6 +22,8 @@ export default function Home(){
   const [tab,setTab]=useState<Tab>("Dashboard"),[input,setInput]=useState(""),[account,setAccount]=useState<Account|null>(null);
   const [stats,setStats]=useState({submitted:0,generated:0,approved:0,published:0,skipped:0,failed:0});
   const [queue,setQueue]=useState<Post[]>([]),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[message,setMessage]=useState("");
+  const [storageReady,setStorageReady]=useState(false);
+  const STORAGE_KEY="agentx.workspace.v1";
 
   const parsed=useMemo(()=>parseXUrls(input),[input]);
   const refresh=async()=>{
@@ -33,7 +35,25 @@ export default function Home(){
       if(r.ok){const d=await r.json();setStats(d.stats);setQueue(d.queue)}
     }catch{setAccount(null);setQueue([])}finally{setLoading(false)}
   };
-  useEffect(()=>{refresh()},[]);
+  useEffect(()=>{
+    try {
+      const raw=localStorage.getItem(STORAGE_KEY);
+      if(raw){
+        const saved=JSON.parse(raw);
+        if(typeof saved.input==="string")setInput(saved.input);
+        if(saved.tab&&tabs.includes(saved.tab))setTab(saved.tab);
+        if(saved.stats&&typeof saved.stats==="object")setStats(s=>({...s,...saved.stats}));
+        if(Array.isArray(saved.queue))setQueue(saved.queue);
+      }
+    } catch { /* Ignore corrupt or unavailable browser storage. */ }
+    setStorageReady(true);
+    refresh();
+  },[]);
+  useEffect(()=>{
+    if(!storageReady)return;
+    try{localStorage.setItem(STORAGE_KEY,JSON.stringify({version:1,input,tab,stats,queue,savedAt:new Date().toISOString()}));}
+    catch{setMessage("Device storage is full. Export or clear older workspace data to continue saving.");}
+  },[storageReady,input,tab,stats,queue]);
   useEffect(()=>{if(!account)return;const id=setInterval(async()=>{await fetch("/api/queue/worker");await refresh()},7000);return()=>clearInterval(id)},[account]);
 
   const connect=()=>{window.location.href="/api/auth/x/start"};
