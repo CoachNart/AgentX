@@ -22,41 +22,97 @@ export default function Home(){
   const [tab,setTab]=useState<Tab>("Dashboard"),[input,setInput]=useState(""),[account,setAccount]=useState<Account|null>(null);
   const [stats,setStats]=useState({submitted:0,generated:0,approved:0,published:0,skipped:0,failed:0});
   const [queue,setQueue]=useState<Post[]>([]),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[message,setMessage]=useState("");
+  const [storageReady,setStorageReady]=useState(false);
+  const STORAGE_KEY="agentx.workspace.v1";
 
   const parsed=useMemo(()=>parseXUrls(input),[input]);
   const refresh=async()=>{
     try{
       const status=await fetch("/api/auth/status",{credentials:"include",cache:"no-store"}),sd=await status.json();
-      if(!status.ok||!sd.connected){setAccount(null);setQueue([]);setLoading(false);return}
+      if(!status.ok||!sd.connected){setAccount(null);setLoading(false);return}
       setAccount(sd.account as Account);
-      const r=await fetch("/api/dashboard",{credentials:"include",cache:"no-store"});
-      if(r.ok){const d=await r.json();setStats(d.stats);setQueue(d.queue)}
-    }catch{setAccount(null);setQueue([])}finally{setLoading(false)}
+      // Dashboard metrics and queue are persisted locally; no database request is required.
+    }catch{setAccount(null)}finally{setLoading(false)}
   };
-  useEffect(()=>{refresh()},[]);
-  useEffect(()=>{if(!account)return;const id=setInterval(async()=>{await fetch("/api/queue/worker");await refresh()},7000);return()=>clearInterval(id)},[account]);
+  useEffect(()=>{
+    try {
+      const raw=localStorage.getItem(STORAGE_KEY);
+      if(raw){
+        const saved=JSON.parse(raw);
+        if(typeof saved.input==="string")setInput(saved.input);
+        if(saved.tab&&tabs.includes(saved.tab))setTab(saved.tab);
+        if(saved.stats&&typeof saved.stats==="object")setStats(s=>({...s,...saved.stats}));
+        if(Array.isArray(saved.queue))setQueue(saved.queue);
+      }
+    } catch { /* Ignore corrupt or unavailable browser storage. */ }
+    setStorageReady(true);
+    refresh();
+  },[]);
+  useEffect(()=>{
+    if(!storageReady)return;
+    try{localStorage.setItem(STORAGE_KEY,JSON.stringify({version:1,input,tab,stats,queue,savedAt:new Date().toISOString()}));}
+    catch{setMessage("Device storage is full. Export or clear older workspace data to continue saving.");}
+  },[storageReady,input,tab,stats,queue]);
 
   const connect=()=>{window.location.href="/api/auth/x/start"};
   const disconnect=async()=>{await fetch("/api/auth/x/disconnect",{method:"POST"});setAccount(null);setQueue([])};
+  const saveLocalHistory=(batch:any)=>{
+    try{const current=JSON.parse(localStorage.getItem("agentx.history.v1")||'{"batches":[]}');const batches=Array.isArray(current.batches)?current.batches:[];localStorage.setItem("agentx.history.v1",JSON.stringify({batches:[batch,...batches.filter((item:any)=>item.id!==batch.id)].slice(0,100)}));}catch{}
+  };
+  const getLocalPrefs=()=>{
+    try{return JSON.parse(localStorage.getItem("agentx.settings.v1")||"{}")}catch{return {}}
+  };
+  const recalcStats=(items:Post[],submitted?:number)=>{
+    setStats(s=>({...s,submitted:submitted??s.submitted,generated:items.filter(x=>!!x.generatedReply).length,approved:items.filter(x=>x.status==="APPROVED"||x.approvalStatus==="APPROVED").length,published:items.filter(x=>x.status==="PUBLISHED").length,skipped:items.filter(x=>x.status==="SKIPPED").length,failed:items.filter(x=>x.status==="FAILED").length}));
+  };
+  const processLocalPost=async(item:Post&{xPostId:string},previous:Post[])=>{
+    const prefs=getLocalPrefs();
+    const r=await fetch("/api/local/process",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({xPostId:item.xPostId,voice:prefs.voice||{},settings:prefs.settings||{},previousReplies:previous.map(x=>x.generatedReply).filter(Boolean)})});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||"Unable to process post.");
+    return {...item,...d.post,id:item.id,xPostId:item.xPostId};
+  };
   const createBatch=async()=>{
     setBusy(true);setMessage("");
     try{
-      const r=await fetch("/api/batch/create",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({input})}),d=await r.json();
-      if(!r.ok)throw new Error(d.error);
-      setMessage("Batch accepted. The durable worker is processing the posts.");setInput("");setTab("Queue");await fetch("/api/queue/worker");await refresh();
+      const parsedInput=parsed;
+      if(!parsedInput.valid.length)throw new Error("No valid X post links were found.");
+      const ids=new Set(queue.map(x=>x.xPostId));
+      const fresh=parsedInput.valid.filter(x=>!ids.has(x.postId));
+      if(!fresh.length)throw new Error("All valid links are already saved in your local workspace.");
+      const batchId=crypto.randomUUID(),createdAt=new Date().toISOString();
+      const initial=fresh.map(x=>({id:crypto.randomUUID(),xPostId:x.postId,postUrl:x.url,status:"PROCESSING",approvalStatus:"PENDING",postText:"Fetching post from X…",createdAt,updatedAt:createdAt,batchId} as Post&{xPostId:string;postUrl:string;createdAt:string;updatedAt:string;batchId:string}));
+      let all=[...initial,...queue];setQueue(all);setInput("");setTab("Queue");
+      saveLocalHistory({id:batchId,label:"New batch",imported:parsedInput.imported,valid:fresh.length,duplicates:parsedInput.duplicates.length+parsedInput.valid.length-fresh.length,invalid:parsedInput.invalid.length,status:"PROCESSING",createdAt});
+      recalcStats(all,stats.submitted+fresh.length);
+      let succeeded=0;
+      for(const item of initial){
+        try{const processed=await processLocalPost(item,all.filter(x=>x.generatedReply));all=all.map(x=>x.id===item.id?processed:x);succeeded++;}
+        catch(e){all=all.map(x=>x.id===item.id?{...x,status:"FAILED",errorMessage:e instanceof Error?e.message:"Processing failed.",postText:"Unable to load post from X."}:x);}
+        setQueue([...all]);recalcStats(all,stats.submitted+fresh.length);
+      }
+      saveLocalHistory({id:batchId,label:"New batch",imported:parsedInput.imported,valid:fresh.length,duplicates:parsedInput.duplicates.length+parsedInput.valid.length-fresh.length,invalid:parsedInput.invalid.length,status:"COMPLETED",createdAt});
+      setMessage("Saved "+fresh.length+" post(s) on this device. "+succeeded+" processed successfully.");
     }catch(e){setMessage(e instanceof Error?e.message:"Unable to create batch.")}finally{setBusy(false)}
   };
   const review=async(id:string,action:"approve"|"skip")=>{
-    await fetch("/api/queue/approve",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({postId:id,action})});await refresh()
+    const next=queue.map(x=>x.id===id?{...x,status:action==="approve"?"APPROVED":"SKIPPED",approvalStatus:action==="approve"?"APPROVED":"SKIPPED"}:x);
+    setQueue(next);recalcStats(next);setMessage(action==="approve"?"Reply approved locally.":"Post skipped.");
   };
   const regenerate=async(id:string)=>{
-    setBusy(true);const r=await fetch("/api/queue/regenerate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({postId:id})}),d=await r.json();
-    setMessage(r.ok?"Reply regenerated.":d.error);await refresh();setBusy(false)
+    const item=queue.find(x=>x.id===id) as (Post&{xPostId:string})|undefined;if(!item)return;
+    setBusy(true);try{const processed=await processLocalPost(item,queue.filter(x=>x.id!==id&&x.generatedReply));const next=queue.map(x=>x.id===id?processed:x);setQueue(next);recalcStats(next);setMessage(processed.generatedReply?"Reply regenerated.":"A reply could not be approved by quality checks.");}catch(e){setMessage(e instanceof Error?e.message:"Reply regeneration failed.")}finally{setBusy(false)}
   };
   const publish=async()=>{
-    const ids=queue.filter(x=>x.status==="APPROVED").map(x=>x.id);if(!ids.length)return;
-    setBusy(true);const r=await fetch("/api/publish",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({postIds:ids})}),d=await r.json();
-    setMessage(r.ok?d.queued+" approved replies placed in the publishing queue.":d.error);await fetch("/api/queue/worker");await refresh();setBusy(false)
+    const approved=queue.filter(x=>x.status==="APPROVED"&&x.generatedReply);
+    if(!approved.length)return;
+    setBusy(true);let next=[...queue],published=0;
+    for(const item of approved){
+      try{const r=await fetch("/api/local/publish",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({xPostId:item.xPostId,reply:item.generatedReply})}),d=await r.json();if(!r.ok)throw new Error(d.error||"Publishing failed.");next=next.map(x=>x.id===item.id?{...x,status:"PUBLISHED",publishedAt:d.publishedAt,publishedReplyId:d.id}:x);published++;}
+      catch(e){next=next.map(x=>x.id===item.id?{...x,status:"FAILED",errorMessage:e instanceof Error?e.message:"Publishing failed."}:x);}
+      setQueue([...next]);
+    }
+    recalcStats(next);setMessage(published+" approved reply/replies published.");setBusy(false)
   };
 
   if(loading)return <div className="loading-screen"><div className="loading-mark">AX</div><span>Loading workspace</span></div>;
@@ -135,16 +191,20 @@ function Dashboard({stats,queue,onNew,onQueue}:{stats:any;queue:Post[];onNew:()=
 function Queue(p:{queue:Post[];onReview:(id:string,a:"approve"|"skip")=>void;onRegenerate:(id:string)=>void;onPublish:()=>void;busy:boolean}){
   const approved=p.queue.filter(x=>x.status==="APPROVED").length;
   return <section className="page-section"><div className="page-intro queue-intro"><div><span className="eyebrow">Review center</span><h1>Publishing queue</h1><p>Read, edit externally if needed, approve or skip. Nothing is published just because it was generated.</p></div><Button disabled={!approved||p.busy} onClick={p.onPublish}>Publish approved ({approved})</Button></div>
-    <section className="premium-card queue-card">{!p.queue.length?<div className="dash-empty large"><span>✓</span><strong>No posts waiting</strong><p>Your active queue is empty. Start a new batch when you are ready.</p></div>:<div className="queue-list">{p.queue.map(x=><article key={x.id} className="queue-item"><div className="post-meta"><div className="mini-avatar">{(x.authorName||"X").slice(0,1).toUpperCase()}</div><div><b>{x.authorName||"X user"}</b><span>{x.authorUsername?"@"+x.authorUsername:""}</span></div><i className={"status-tag "+x.status.toLowerCase()}>{x.status.toLowerCase().replace("_"," ")}</i></div><p className="post-text">{x.postText||x.errorMessage||"Waiting for X post data…"}</p>{x.generatedReply&&<div className="reply-box"><div className="reply-label">AgentX reply</div><p>“{x.generatedReply}”</p><div className="quality-row"><span>Confidence <b>{Math.round(x.confidence||0)}</b></span><span>Quality <b>{Math.round(x.qualityScore||0)}</b></span></div></div>}{x.status==="READY"&&<div className="row-actions"><Button secondary onClick={()=>p.onReview(x.id,"skip")}>Skip</Button><Button secondary onClick={()=>p.onRegenerate(x.id)}>Regenerate</Button><Button onClick={()=>p.onReview(x.id,"approve")}>Approve reply</Button></div>}</article>)}</div>}</section>
+    <section className="premium-card queue-card">{!p.queue.length?<div className="dash-empty large"><span>✓</span><strong>No posts waiting</strong><p>Your active queue is empty. Start a new batch when you are ready.</p></div>:<div className="queue-list">{p.queue.map(x=><article key={x.id} className="queue-item"><div className="post-meta"><div className="mini-avatar">{(x.authorName||"X").slice(0,1).toUpperCase()}</div><div><b>{x.authorName||"X user"}</b><span>{x.authorUsername?"@"+x.authorUsername:""}</span></div><i className={"status-tag "+x.status.toLowerCase()}>{x.status.toLowerCase().replace("_"," ")}</i></div><p className="post-text">{x.postText||x.errorMessage||"Waiting for X post data…"}</p>{x.generatedReply&&<div className="reply-box"><div className="reply-label">AgentX reply</div><p>“{x.generatedReply}”</p><div className="quality-row"><span>Confidence <b>{Math.round(x.confidence||0)}</b></span><span>Quality <b>{Math.round(x.qualityScore||0)}</b></span></div></div>}{x.status==="READY"&&<div className="row-actions"><Button secondary onClick={()=>p.onReview(x.id,"skip")}>Skip</Button><Button secondary onClick={()=>p.onRegenerate(x.id)}>Regenerate</Button><Button onClick={()=>p.onReview(x.id,"approve")}>Approve reply</Button></div>}{x.status==="FAILED"&&<div className="row-actions"><Button secondary onClick={()=>p.onReview(x.id,"skip")}>Skip</Button><Button onClick={()=>p.onRegenerate(x.id)}>Retry generation</Button></div>}</article>)}</div>}</section>
   </section>
 }
 
-function History(){const[data,setData]=useState<any>(null);useEffect(()=>{fetch("/api/history").then(r=>r.json()).then(setData)},[]);return <section className="page-section"><PageIntro eyebrow="Archive" title="Batch history" text="A record of your previous imports and processing outcomes."/><div className="history-list">{!data?<div className="premium-card dash-empty">Loading history…</div>:data.batches?.length?data.batches.map((b:any)=><div className="premium-card history-row" key={b.id}><div><span className="history-dot"/><div><b>{b.label||b.id}</b><small>{b.valid} valid · {b.duplicates} duplicates · {b.invalid} invalid</small></div></div><span className="history-status">{b.status.toLowerCase()}</span></div>):<div className="premium-card dash-empty"><span>◷</span><strong>No batches yet</strong><p>Your processed batches will appear here.</p></div>}</div></section>}
+function History(){const[data,setData]=useState<any>({batches:[]});useEffect(()=>{
+  try{const saved=localStorage.getItem("agentx.history.v1");if(saved)setData(JSON.parse(saved));}catch{}
+},[]);return <section className="page-section"><PageIntro eyebrow="Archive" title="Batch history" text="A record of your previous imports and processing outcomes."/><div className="history-list">{!data?<div className="premium-card dash-empty">Loading history…</div>:data.batches?.length?data.batches.map((b:any)=><div className="premium-card history-row" key={b.id}><div><span className="history-dot"/><div><b>{b.label||b.id}</b><small>{b.valid} valid · {b.duplicates} duplicates · {b.invalid} invalid</small></div></div><span className="history-status">{b.status.toLowerCase()}</span></div>):<div className="premium-card dash-empty"><span>◷</span><strong>No batches yet</strong><p>Your processed batches will appear here.</p></div>}</div></section>}
 
 function Settings(){
-  const[data,setData]=useState<any>(null),[saving,setSaving]=useState(false);
-  useEffect(()=>{fetch("/api/settings").then(r=>r.json()).then(setData)},[]);
+  const[data,setData]=useState<any>({voice:{tone:"conversational",personality:"curious, useful, concise",preferredLength:"10-30 words",emojiUsage:"rare",professional:50},settings:{qualityThreshold:80,publishingMode:"review",autoPublish:false,maxRetries:3}}),[saving,setSaving]=useState(false);
+  useEffect(()=>{
+    try{const saved=localStorage.getItem("agentx.settings.v1");if(saved)setData(JSON.parse(saved));}catch{}
+  },[]);
   if(!data)return <section className="page-section"><div className="premium-card dash-empty">Loading settings…</div></section>;
-  const voice=data.voice||{},settings=data.settings||{},setVoice=(k:string,v:any)=>setData({...data,voice:{...voice,[k]:v}}),setSettings=(k:string,v:any)=>setData({...data,settings:{...settings,[k]:v}}),save=async()=>{setSaving(true);await fetch("/api/settings",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({voice,settings})});setSaving(false)};
+  const voice=data.voice||{},settings=data.settings||{},setVoice=(k:string,v:any)=>setData({...data,voice:{...voice,[k]:v}}),setSettings=(k:string,v:any)=>setData({...data,settings:{...settings,[k]:v}}),save=async()=>{setSaving(true);const payload={voice,settings};try{localStorage.setItem("agentx.settings.v1",JSON.stringify(payload));}catch{}setSaving(false)};
   return <section className="page-section"><PageIntro eyebrow="Control center" title="Settings" text="Tune your voice and publishing guardrails without changing the underlying workflow."/><div className="settings-grid"><section className="premium-card settings-card"><div className="section-head"><div><span className="eyebrow">01 · Voice</span><h2>Voice profile</h2></div></div><p className="card-copy">Configure your own style. AgentX does not imitate another person.</p>{[["tone","Tone"],["personality","Personality"],["preferredLength","Preferred length"],["emojiUsage","Emoji usage"],["slang","Slang"],["avoidWords","Words to avoid"],["avoidPhrases","Phrases to avoid"],["topics","Industries / topics"]].map(x=><label key={x[0]}><small>{x[1]}</small><input className="input" value={voice[x[0]]||""} onChange={e=>setVoice(x[0],e.target.value)}/></label>)}<label><small>Professional ↔ casual ({voice.professional??50})</small><input className="range" type="range" min="0" max="100" value={voice.professional??50} onChange={e=>setVoice("professional",Number(e.target.value))}/></label></section><section className="premium-card settings-card"><div className="section-head"><div><span className="eyebrow">02 · Guardrails</span><h2>Publishing & quality</h2></div></div><p className="card-copy">Review mode is the safe default. Auto-publish remains opt-in and permission-dependent.</p><label><small>Minimum quality · {settings.qualityThreshold??80}</small><input className="range" type="range" min="50" max="100" value={settings.qualityThreshold??80} onChange={e=>setSettings("qualityThreshold",Number(e.target.value))}/></label><label className="toggle"><span><b>Auto-publish</b><small>Only when explicitly enabled</small></span><input type="checkbox" checked={!!settings.autoPublish} onChange={e=>{setSettings("autoPublish",e.target.checked);setSettings("publishingMode",e.target.checked?"auto":"review")}}/></label><label><small>Maximum retries</small><input className="input" type="number" min="1" max="8" value={settings.maxRetries??3} onChange={e=>setSettings("maxRetries",Number(e.target.value))}/></label><Button disabled={saving} onClick={save}>{saving?"Saving…":"Save changes"}</Button></section></div></section>
 }
