@@ -31,8 +31,7 @@ export default function Home(){
       const status=await fetch("/api/auth/status",{credentials:"include",cache:"no-store"}),sd=await status.json();
       if(!status.ok||!sd.connected){setAccount(null);setLoading(false);return}
       setAccount(sd.account as Account);
-      const r=await fetch("/api/dashboard",{credentials:"include",cache:"no-store"});
-      if(r.ok){const d=await r.json();setStats(d.stats);setQueue(d.queue)}
+      // Dashboard metrics and queue are persisted locally; no database request is required.
     }catch{setAccount(null)}finally{setLoading(false)}
   };
   useEffect(()=>{
@@ -54,12 +53,11 @@ export default function Home(){
     try{localStorage.setItem(STORAGE_KEY,JSON.stringify({version:1,input,tab,stats,queue,savedAt:new Date().toISOString()}));}
     catch{setMessage("Device storage is full. Export or clear older workspace data to continue saving.");}
   },[storageReady,input,tab,stats,queue]);
-  useEffect(()=>{if(!account)return;const id=setInterval(async()=>{await fetch("/api/queue/worker");await refresh()},7000);return()=>clearInterval(id)},[account]);
 
   const connect=()=>{window.location.href="/api/auth/x/start"};
   const disconnect=async()=>{await fetch("/api/auth/x/disconnect",{method:"POST"});setAccount(null);setQueue([])};
   const saveLocalHistory=(batch:any)=>{
-    try{const current=JSON.parse(localStorage.getItem("agentx.history.v1")||'{"batches":[]}');const batches=Array.isArray(current.batches)?current.batches:[];localStorage.setItem("agentx.history.v1",JSON.stringify({batches:[batch,...batches].slice(0,100)}));}catch{}
+    try{const current=JSON.parse(localStorage.getItem("agentx.history.v1")||'{"batches":[]}');const batches=Array.isArray(current.batches)?current.batches:[];localStorage.setItem("agentx.history.v1",JSON.stringify({batches:[batch,...batches.filter((item:any)=>item.id!==batch.id)].slice(0,100)}));}catch{}
   };
   const getLocalPrefs=()=>{
     try{return JSON.parse(localStorage.getItem("agentx.settings.v1")||"{}")}catch{return {}}
@@ -199,16 +197,14 @@ function Queue(p:{queue:Post[];onReview:(id:string,a:"approve"|"skip")=>void;onR
 
 function History(){const[data,setData]=useState<any>({batches:[]});useEffect(()=>{
   try{const saved=localStorage.getItem("agentx.history.v1");if(saved)setData(JSON.parse(saved));}catch{}
-  fetch("/api/history").then(async r=>{if(!r.ok)return null;return r.json()}).then(d=>{if(d){setData(d);try{localStorage.setItem("agentx.history.v1",JSON.stringify(d))}catch{}}}).catch(()=>{});
 },[]);return <section className="page-section"><PageIntro eyebrow="Archive" title="Batch history" text="A record of your previous imports and processing outcomes."/><div className="history-list">{!data?<div className="premium-card dash-empty">Loading history…</div>:data.batches?.length?data.batches.map((b:any)=><div className="premium-card history-row" key={b.id}><div><span className="history-dot"/><div><b>{b.label||b.id}</b><small>{b.valid} valid · {b.duplicates} duplicates · {b.invalid} invalid</small></div></div><span className="history-status">{b.status.toLowerCase()}</span></div>):<div className="premium-card dash-empty"><span>◷</span><strong>No batches yet</strong><p>Your processed batches will appear here.</p></div>}</div></section>}
 
 function Settings(){
   const[data,setData]=useState<any>({voice:{tone:"conversational",personality:"curious, useful, concise",preferredLength:"10-30 words",emojiUsage:"rare",professional:50},settings:{qualityThreshold:80,publishingMode:"review",autoPublish:false,maxRetries:3}}),[saving,setSaving]=useState(false);
   useEffect(()=>{
     try{const saved=localStorage.getItem("agentx.settings.v1");if(saved)setData(JSON.parse(saved));}catch{}
-    fetch("/api/settings").then(async r=>{if(!r.ok)return null;return r.json()}).then(d=>{if(d){setData(d);try{localStorage.setItem("agentx.settings.v1",JSON.stringify(d))}catch{}}}).catch(()=>{});
   },[]);
   if(!data)return <section className="page-section"><div className="premium-card dash-empty">Loading settings…</div></section>;
-  const voice=data.voice||{},settings=data.settings||{},setVoice=(k:string,v:any)=>setData({...data,voice:{...voice,[k]:v}}),setSettings=(k:string,v:any)=>setData({...data,settings:{...settings,[k]:v}}),save=async()=>{setSaving(true);const payload={voice,settings};try{localStorage.setItem("agentx.settings.v1",JSON.stringify(payload));}catch{}try{const r=await fetch("/api/settings",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify(payload)});}catch{}setSaving(false)};
+  const voice=data.voice||{},settings=data.settings||{},setVoice=(k:string,v:any)=>setData({...data,voice:{...voice,[k]:v}}),setSettings=(k:string,v:any)=>setData({...data,settings:{...settings,[k]:v}}),save=async()=>{setSaving(true);const payload={voice,settings};try{localStorage.setItem("agentx.settings.v1",JSON.stringify(payload));}catch{}catch{}setSaving(false)};
   return <section className="page-section"><PageIntro eyebrow="Control center" title="Settings" text="Tune your voice and publishing guardrails without changing the underlying workflow."/><div className="settings-grid"><section className="premium-card settings-card"><div className="section-head"><div><span className="eyebrow">01 · Voice</span><h2>Voice profile</h2></div></div><p className="card-copy">Configure your own style. AgentX does not imitate another person.</p>{[["tone","Tone"],["personality","Personality"],["preferredLength","Preferred length"],["emojiUsage","Emoji usage"],["slang","Slang"],["avoidWords","Words to avoid"],["avoidPhrases","Phrases to avoid"],["topics","Industries / topics"]].map(x=><label key={x[0]}><small>{x[1]}</small><input className="input" value={voice[x[0]]||""} onChange={e=>setVoice(x[0],e.target.value)}/></label>)}<label><small>Professional ↔ casual ({voice.professional??50})</small><input className="range" type="range" min="0" max="100" value={voice.professional??50} onChange={e=>setVoice("professional",Number(e.target.value))}/></label></section><section className="premium-card settings-card"><div className="section-head"><div><span className="eyebrow">02 · Guardrails</span><h2>Publishing & quality</h2></div></div><p className="card-copy">Review mode is the safe default. Auto-publish remains opt-in and permission-dependent.</p><label><small>Minimum quality · {settings.qualityThreshold??80}</small><input className="range" type="range" min="50" max="100" value={settings.qualityThreshold??80} onChange={e=>setSettings("qualityThreshold",Number(e.target.value))}/></label><label className="toggle"><span><b>Auto-publish</b><small>Only when explicitly enabled</small></span><input type="checkbox" checked={!!settings.autoPublish} onChange={e=>{setSettings("autoPublish",e.target.checked);setSettings("publishingMode",e.target.checked?"auto":"review")}}/></label><label><small>Maximum retries</small><input className="input" type="number" min="1" max="8" value={settings.maxRetries??3} onChange={e=>setSettings("maxRetries",Number(e.target.value))}/></label><Button disabled={saving} onClick={save}>{saving?"Saving…":"Save changes"}</Button></section></div></section>
 }
