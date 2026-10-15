@@ -1,19 +1,29 @@
 # AgentX
 
-AgentX is an AI-assisted workflow application for working with selected X posts through the official X API.
+AgentX is an AI-assisted workspace for reviewing and publishing replies to selected X posts.
 
-## Persistence
+## Local-first storage
 
-AgentX uses **Firebase Firestore** through the server-side Firebase Admin SDK. No Firebase client credentials are exposed to the browser.
+The active workspace is designed to run without a database while the product is being built:
 
-Set these server-side environment variables:
+- Workspace queue, imported-post records, generated replies, metrics, drafts, history and settings are saved in the browser's `localStorage`.
+- X OAuth tokens are kept in an encrypted, HTTP-only server cookie. Tokens are not written to browser storage.
+- Post retrieval, AI analysis/reply generation and publishing use stateless server endpoints; workspace records remain on the user's device.
+- Local data belongs to the current browser and device. Clearing browser site data removes it, and it does not sync across devices. Add a database later for durable cross-device storage and background processing.
 
-- `FIREBASE_PROJECT_ID`
-- `FIREBASE_CLIENT_EMAIL`
-- `FIREBASE_PRIVATE_KEY`
-- `ENCRYPTION_KEY`
+## Environment
 
-X OAuth, AI, queue processing, review, approval and publishing continue to use the existing server-side architecture.
+Configure these server-side variables:
+
+- `X_CLIENT_ID`
+- `X_CLIENT_SECRET` (if required by your X OAuth app)
+- `X_REDIRECT_URI` (must exactly match the callback configured with X)
+- `AI_API_KEY`
+- `AI_API_URL` (optional; defaults to the OpenAI-compatible chat completions endpoint)
+- `AI_MODEL`
+- `ENCRYPTION_KEY` (required to encrypt the OAuth session cookie)
+
+Firebase credentials are not required by the active local-first workspace.
 
 ## Local development
 
